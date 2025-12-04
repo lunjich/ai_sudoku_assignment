@@ -34,7 +34,7 @@ int main() {
         res.set_content(out, "application/json");
     });
 
-    svr.set_base_dir("www");
+    svr.set_base_dir("docs");
     std::cout << "Server started on http://localhost:8080\n";
     svr.listen("0.0.0.0", 8080);
 }
