@@ -1,5 +1,6 @@
 let initialBoard = [];
 let isSolving = false;
+let lastExampleIndex = -1;
 
 window.onload = () => {
     initializeBoard();
@@ -116,16 +117,39 @@ function saveInitialState() {
     }
 }
 
+let duplicateCells = [];
+
+function clearDuplicateHighlights() {
+    document.querySelectorAll('.cell-input').forEach(cell => {
+        cell.classList.remove('cell-duplicate');
+    });
+}
+
+function highlightDuplicateCells() {
+    duplicateCells.forEach(([r, c]) => {
+        const cell = document.getElementById(`c${r}${c}`);
+        if (cell) cell.classList.add('cell-duplicate');
+    });
+}
+
 function isValidSudoku(board) {
+    // Track duplicate coordinates
+    duplicateCells = [];
+
     // Check rows
     for (let i = 0; i < 9; i++) {
         let row = [];
+        let seenPositions = {};
         for (let j = 0; j < 9; j++) {
             if (board[i][j] !== 0) {
                 if (row.includes(board[i][j])) {
+                    duplicateCells.push(...seenPositions[board[i][j]].map(col => [i, col]));
+                    duplicateCells.push([i, j]);
                     return false;
                 }
                 row.push(board[i][j]);
+                if (!seenPositions[board[i][j]]) seenPositions[board[i][j]] = [];
+                seenPositions[board[i][j]].push(j);
             }
         }
     }
@@ -133,12 +157,17 @@ function isValidSudoku(board) {
     // Check columns
     for (let j = 0; j < 9; j++) {
         let col = [];
+        let seenPositions = {};
         for (let i = 0; i < 9; i++) {
             if (board[i][j] !== 0) {
                 if (col.includes(board[i][j])) {
+                    duplicateCells.push(...seenPositions[board[i][j]].map(row => [row, j]));
+                    duplicateCells.push([i, j]);
                     return false;
                 }
                 col.push(board[i][j]);
+                if (!seenPositions[board[i][j]]) seenPositions[board[i][j]] = [];
+                seenPositions[board[i][j]].push(i);
             }
         }
     }
@@ -146,6 +175,7 @@ function isValidSudoku(board) {
     // Check 3x3 boxes
     for (let box = 0; box < 9; box++) {
         let boxNums = [];
+        let seenPositions = {};
         let startRow = Math.floor(box / 3) * 3;
         let startCol = (box % 3) * 3;
         for (let i = 0; i < 3; i++) {
@@ -153,9 +183,13 @@ function isValidSudoku(board) {
                 let val = board[startRow + i][startCol + j];
                 if (val !== 0) {
                     if (boxNums.includes(val)) {
+                        duplicateCells.push(...seenPositions[val].map(([r, c]) => [r, c]));
+                        duplicateCells.push([startRow + i, startCol + j]);
                         return false;
                     }
                     boxNums.push(val);
+                    if (!seenPositions[val]) seenPositions[val] = [];
+                    seenPositions[val].push([startRow + i, startCol + j]);
                 }
             }
         }
@@ -169,6 +203,7 @@ function solveSudoku() {
     
     const solveBtn = document.getElementById("solveBtn");
     const status = document.getElementById("status");
+    clearDuplicateHighlights();
     
     // Collect board data
     let board = [];
@@ -182,7 +217,8 @@ function solveSudoku() {
     
     // Validate the puzzle before solving
     if (!isValidSudoku(board)) {
-        status.textContent = "❌ Invalid Sudoku puzzle! Please check for duplicate numbers in rows, columns, or 3x3 boxes.";
+        highlightDuplicateCells();
+        status.textContent = "❌ Invalid Sudoku! Duplicate numbers found.";
         status.className = "status error";
         return;
     }
@@ -279,18 +315,46 @@ function loadExample() {
     
     clearBoard();
     
-    // Example puzzle
-    const example = [
-        [5, 3, 0, 0, 7, 0, 0, 0, 0],
-        [6, 0, 0, 1, 9, 5, 0, 0, 0],
-        [0, 9, 8, 0, 0, 0, 0, 6, 0],
-        [8, 0, 0, 0, 6, 0, 0, 0, 3],
-        [4, 0, 0, 8, 0, 3, 0, 0, 1],
-        [7, 0, 0, 0, 2, 0, 0, 0, 6],
-        [0, 6, 0, 0, 0, 0, 2, 8, 0],
-        [0, 0, 0, 4, 1, 9, 0, 0, 5],
-        [0, 0, 0, 0, 8, 0, 0, 7, 9]
+    // Three example puzzles (easy/medium/harder)
+    const examples = [
+        [
+            [5, 3, 0, 0, 7, 0, 0, 0, 0],
+            [6, 0, 0, 1, 9, 5, 0, 0, 0],
+            [0, 9, 8, 0, 0, 0, 0, 6, 0],
+            [8, 0, 0, 0, 6, 0, 0, 0, 3],
+            [4, 0, 0, 8, 0, 3, 0, 0, 1],
+            [7, 0, 0, 0, 2, 0, 0, 0, 6],
+            [0, 6, 0, 0, 0, 0, 2, 8, 0],
+            [0, 0, 0, 4, 1, 9, 0, 0, 5],
+            [0, 0, 0, 0, 8, 0, 0, 7, 9]
+        ],
+        [
+            [0, 0, 0, 2, 6, 0, 7, 0, 1],
+            [6, 8, 0, 0, 7, 0, 0, 9, 0],
+            [1, 9, 0, 0, 0, 4, 5, 0, 0],
+            [8, 2, 0, 1, 0, 0, 0, 4, 0],
+            [0, 0, 4, 6, 0, 2, 9, 0, 0],
+            [0, 5, 0, 0, 0, 3, 0, 2, 8],
+            [0, 0, 9, 3, 0, 0, 0, 7, 4],
+            [0, 4, 0, 0, 5, 0, 0, 3, 6],
+            [7, 0, 3, 0, 1, 8, 0, 0, 0]
+        ],
+        [
+            [0, 0, 5, 3, 0, 0, 0, 0, 0],
+            [8, 0, 0, 0, 0, 0, 0, 2, 0],
+            [0, 7, 0, 0, 1, 0, 5, 0, 0],
+            [4, 0, 0, 0, 0, 5, 3, 0, 0],
+            [0, 1, 0, 0, 7, 0, 0, 0, 6],
+            [0, 0, 3, 2, 0, 0, 0, 8, 0],
+            [0, 6, 0, 5, 0, 0, 0, 0, 9],
+            [0, 0, 4, 0, 0, 0, 0, 3, 0],
+            [0, 0, 0, 0, 0, 9, 7, 0, 0]
+        ]
     ];
+    const choices = examples.map((_, i) => i).filter(i => i !== lastExampleIndex);
+    const nextIndex = choices[Math.floor(Math.random() * choices.length)];
+    lastExampleIndex = nextIndex;
+    const example = examples[nextIndex];
     
     for (let i = 0; i < 9; i++) {
         for (let j = 0; j < 9; j++) {
