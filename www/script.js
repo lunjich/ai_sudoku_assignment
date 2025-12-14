@@ -1,6 +1,7 @@
 let initialBoard = [];
 let isSolving = false;
 let lastExampleIndex = -1;
+let currentDifficultyLabel = "Unknown";
 
 window.onload = () => {
     initializeBoard();
@@ -125,11 +126,208 @@ function clearDuplicateHighlights() {
     });
 }
 
+function clearHintHighlights() {
+    document.querySelectorAll('.cell-input').forEach(cell => {
+        cell.classList.remove('hint-filled');
+    });
+}
+
 function highlightDuplicateCells() {
     duplicateCells.forEach(([r, c]) => {
         const cell = document.getElementById(`c${r}${c}`);
         if (cell) cell.classList.add('cell-duplicate');
     });
+}
+
+function getDifficultyLabel(board) {
+    let filled = 0;
+    for (let i = 0; i < 9; i++) {
+        for (let j = 0; j < 9; j++) {
+            if (board[i][j] !== 0) filled++;
+        }
+    }
+    if (filled >= 36) return "Easy";
+    if (filled >= 27) return "Medium";
+    return "Hard";
+}
+
+function allFilled(board) {
+    for (let i = 0; i < 9; i++) {
+        for (let j = 0; j < 9; j++) {
+            if (board[i][j] === 0) return false;
+        }
+    }
+    return true;
+}
+
+function hasZero(board) {
+    for (let i = 0; i < 9; i++) {
+        for (let j = 0; j < 9; j++) {
+            if (board[i][j] === 0) return true;
+        }
+    }
+    return false;
+}
+
+function showCelebration(level) {
+    let overlay = document.getElementById("celebration-overlay");
+    if (!overlay) {
+        overlay = document.createElement("div");
+        overlay.id = "celebration-overlay";
+        overlay.innerHTML = `
+            <div class="celebration-content">
+                <div class="fireworks">🎉 🎆 🎉</div>
+                <h2 id="celebration-text"></h2>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+    }
+    document.getElementById("celebration-text").textContent = `Congratulations! Solved a ${level} puzzle!`;
+    overlay.classList.add("show");
+    setTimeout(() => {
+        overlay.classList.remove("show");
+    }, 3000);
+}
+
+function getPossibleNumbers(board, row, col) {
+    let used = new Set();
+
+    // Row & column
+    for (let i = 0; i < 9; i++) {
+        used.add(board[row][i]);
+        used.add(board[i][col]);
+    }
+
+    // 3x3 box
+    let boxRow = Math.floor(row / 3) * 3;
+    let boxCol = Math.floor(col / 3) * 3;
+    for (let i = 0; i < 3; i++) {
+        for (let j = 0; j < 3; j++) {
+            used.add(board[boxRow + i][boxCol + j]);
+        }
+    }
+
+    let possible = [];
+    for (let n = 1; n <= 9; n++) {
+        if (!used.has(n)) possible.push(n);
+    }
+
+    return possible;
+}
+
+async function isBoardSolvable(board) {
+    let data = [];
+    for (let i = 0; i < 9; i++) {
+        for (let j = 0; j < 9; j++) {
+            data.push(board[i][j]);
+        }
+    }
+
+    try {
+        const r = await fetch("/solve", {
+            method: "POST",
+            body: data.toString()
+        });
+        const sol = await r.json();
+        return !hasZero(sol); // true if fully solvable
+    } catch {
+        return false;
+    }
+}
+
+async function fixDuplicateSafely() {
+    if (duplicateCells.length === 0) return false;
+
+    // Build current board
+    let board = [];
+    for (let i = 0; i < 9; i++) {
+        board[i] = [];
+        for (let j = 0; j < 9; j++) {
+            let v = document.getElementById(`c${i}${j}`).value;
+            board[i][j] = v ? parseInt(v) : 0;
+        }
+    }
+
+    for (const [row, col] of duplicateCells) {
+        board[row][col] = 0; // temporarily clear cell
+        let possible = getPossibleNumbers(board, row, col);
+
+        for (const num of possible) {
+            board[row][col] = num;
+
+            // Test solvability using solver
+            if (await isBoardSolvable(board)) {
+                applyHint(row, col, num); // safe replacement
+                return true; // duplicate fixed safely
+            }
+        }
+
+        // Reset if no candidate works
+        board[row][col] = 0;
+    }
+
+    // Could not fix safely
+    return false;
+}
+
+function applyHint(row, col, num) {
+    const cell = document.getElementById(`c${row}${col}`);
+    cell.value = num;
+    cell.classList.add("hint-filled");
+
+    document.getElementById("status").textContent =
+        `💡 Fixed duplicate at row ${row + 1}, column ${col + 1} safely.`;
+    document.getElementById("status").className = "status info";
+}
+
+async function showHint() {
+    clearDuplicateHighlights()
+    // Build current board
+    let board = [];
+    for (let i = 0; i < 9; i++) {
+        board[i] = [];
+        for (let j = 0; j < 9; j++) {
+            let v = document.getElementById(`c${i}${j}`).value;
+            board[i][j] = v ? parseInt(v) : 0;
+        }
+    }
+
+    // Fix duplicates first
+    if (duplicateCells.length > 0) {
+        for (const [row, col] of duplicateCells) {
+            board[row][col] = 0;
+            let possible = getPossibleNumbers(board, row, col);
+
+            for (const num of possible) {
+                board[row][col] = num;
+                if (await isBoardSolvable(board)) {
+                    applyHint(row, col, num);
+                    return;
+                }
+            }
+            board[row][col] = 0;
+        }
+    }
+
+    // If no duplicates, try to fix unsolvable puzzle
+    for (let row = 0; row < 9; row++) {
+        for (let col = 0; col < 9; col++) {
+            if (board[row][col] === 0) {
+                let possible = getPossibleNumbers(board, row, col);
+
+                for (const num of possible) {
+                    board[row][col] = num;
+                    if (await isBoardSolvable(board)) {
+                        applyHint(row, col, num);
+                        return;
+                    }
+                }
+                board[row][col] = 0;
+            }
+        }
+    }
+
+    alert("💡 No safe hint available without breaking the puzzle.");
 }
 
 function isValidSudoku(board) {
@@ -198,12 +396,15 @@ function isValidSudoku(board) {
     return true;
 }
 
+let puzzleSolved = false;
+
 function solveSudoku() {
-    if (isSolving) return;
+    if (isSolving || puzzleSolved) return;
     
     const solveBtn = document.getElementById("solveBtn");
     const status = document.getElementById("status");
     clearDuplicateHighlights();
+    clearHintHighlights();
     
     // Collect board data
     let board = [];
@@ -214,11 +415,16 @@ function solveSudoku() {
             board[i][j] = v ? parseInt(v) : 0;
         }
     }
+    currentDifficultyLabel = getDifficultyLabel(board);
     
     // Validate the puzzle before solving
     if (!isValidSudoku(board)) {
         highlightDuplicateCells();
-        status.textContent = "❌ Invalid Sudoku! Duplicate numbers found.";
+        // status.textContent = "❌ Invalid Sudoku! Duplicate numbers found.";
+        status.innerHTML = `
+            ❌ Invalid Sudoku! Duplicate numbers found.
+            <span class="hint-btn" onclick="showHint()" title="Apply a hint">💡</span>
+        `;
         status.className = "status error";
         return;
     }
@@ -251,11 +457,26 @@ function solveSudoku() {
         return r.json();
     })
     .then(sol => {
-        // Animate solution
-        animateSolution(sol);
-        
-        status.textContent = "✅ Puzzle solved successfully!";
-        status.className = "status success";
+        if (hasZero(sol)) {
+            // status.textContent = "❌ No solution for this puzzle.";
+            status.innerHTML = `
+                ❌ No solution for this puzzle.
+                <span class="hint-btn" onclick="showHint()" title="Apply a hint">💡</span>
+            `;
+            status.className = "status error";
+        } else {
+            // Animate solution
+            animateSolution(sol);
+            
+            status.textContent = "✅ Puzzle solved successfully!";
+            status.className = "status success";
+
+            if (allFilled(sol)) {
+                showCelebration(currentDifficultyLabel);
+                puzzleSolved = true;
+                solveBtn.disabled = true;
+            }
+        }
         
         solveBtn.innerHTML = '<span class="btn-icon">🔍</span><span class="btn-text">Solve Puzzle</span>';
         solveBtn.disabled = false;
@@ -283,7 +504,7 @@ function animateSolution(sol) {
                     cell.value = sol[i][j];
                     cell.classList.add("solved");
                     cell.classList.remove("user-input");
-                    
+
                     // Add animation
                     cell.style.animation = "popIn 0.3s ease-out";
                     setTimeout(() => {
@@ -292,6 +513,9 @@ function animateSolution(sol) {
                 }
             }, delay);
             
+            // Make cell read-only
+            cell.readOnly = true;
+
             delay += 5; // Stagger animation
         }
     }
@@ -299,10 +523,13 @@ function animateSolution(sol) {
 
 function clearBoard() {
     if (isSolving) return;
+    puzzleSolved = false;
+    solveBtn.disabled = false;
     
     document.querySelectorAll('.cell-input').forEach(cell => {
         cell.value = '';
         cell.classList.remove('user-input', 'solved', 'highlighted', 'focused');
+        cell.readOnly = false;
     });
     
     document.getElementById("status").textContent = "";
